@@ -1,0 +1,22 @@
+{
+  "name": "riuviewer",
+  "version": "3.0.0",
+  "description": "Reels Viewer - Facebook, Instagram, TikTok, YouTube Shorts",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.local.riuviewer",
+    "productName": "RiuViewer",
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "target": "dir"
+    }
+  }
+}

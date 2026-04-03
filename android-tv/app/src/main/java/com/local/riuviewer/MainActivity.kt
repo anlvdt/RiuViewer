@@ -78,12 +78,18 @@ class MainActivity : AppCompatActivity() {
             databaseEnabled = true
             allowFileAccess = false
             cacheMode = WebSettings.LOAD_DEFAULT
+            // Enable wide range of media types
+            @Suppress("DEPRECATION")
+            pluginState = WebSettings.PluginState.ON
         }
 
         // Force 1920px desktop viewport — TV renders exactly like a 1080p monitor
         webView.setInitialScale(100)
         webView.settings.useWideViewPort = true
         webView.settings.loadWithOverviewMode = false
+
+        // Direct rendering — no off-screen buffer
+        webView.setLayerType(View.LAYER_TYPE_NONE, null)
 
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 

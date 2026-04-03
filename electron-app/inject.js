@@ -41,9 +41,7 @@ function getScrollTarget(){
      &&_cachedTarget.scrollHeight>_cachedTarget.clientHeight)return _cachedTarget;
   let best=null;
   const host=location.hostname;
-  const selectors = host.includes('instagram.com')
-    ? ['section main > div [style*="overflow"]','div._aagw','div[style*="overflow-y: auto"]','div[style*="overflow-y:auto"]']
-    : host.includes('facebook.com')
+  const selectors = host.includes('facebook.com')
     ? ['[role="main"]','div[style*="overflow-y: scroll"]','div[style*="overflow-y:scroll"]','div[style*="overflow-y: auto"]','div[style*="overflow-y:auto"]','div[style*="overflow: auto"]','div[style*="overflow:auto"]']
     : ['div[style*="overflow-y: auto"]','div[style*="overflow-y:auto"]'];
   for(const sel of selectors){
@@ -66,13 +64,6 @@ function getScrollTarget(){
 
 function doScrollNext(){
   const host = location.hostname;
-  if (host.includes('instagram.com')) {
-    document.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40,
-      bubbles: true, cancelable: true
-    }));
-    return;
-  }
   const vscroller = document.querySelector('.vscroller') || document.querySelector('[class*="vscroller"]');
   if (vscroller) {
     _scrollViaWheel(vscroller, false);
@@ -131,16 +122,6 @@ function _findAllScrollables() {
 }
 
 window.__doManualScroll=function(up){
-  const host = location.hostname;
-  if (host.includes('instagram.com')) {
-    const key = up ? 'ArrowUp' : 'ArrowDown';
-    const code = up ? 38 : 40;
-    document.dispatchEvent(new KeyboardEvent('keydown', {
-      key: key, code: key, keyCode: code, which: code,
-      bubbles: true, cancelable: true
-    }));
-    return;
-  }
   const vscroller = document.querySelector('.vscroller') || document.querySelector('[class*="vscroller"]');
   if (vscroller) {
     _scrollViaWheel(vscroller, up);
@@ -257,8 +238,6 @@ function applyPlaybackRate(){
 // Ad detection
 function isAd(){
   const adWords=["Được tài trợ","Sponsored","Publicidad","Gesponsert","Sponsorisé","Patrocinado","Quảng cáo","Ad"];
-  const host=location.hostname;
-  if(host.includes('instagram.com'))adWords.push("Được tài trợ","Sponsored");
   for(const sp of document.querySelectorAll("span,a,div")){
     const t=(sp.textContent||"").trim();
     if(t.length>30||t.length<2)continue;
@@ -371,28 +350,8 @@ function dismissLight(){
 
   // Remove dialogs
   document.querySelectorAll("[role='dialog'],[data-testid='royal_login_bar']").forEach(e=>{
-    if (host.includes('instagram.com')) {
-      const txt = (e.textContent || '').toLowerCase();
-      if (txt.includes('log in') || txt.includes('sign up') || txt.includes('đăng nhập') || txt.includes('đăng ký')) {
-        e.remove();
-        document.body.style.overflow = '';
-        document.documentElement.style.overflow = '';
-        return;
-      }
-    }
     e.remove();
   });
-
-  // Instagram: remove login overlay
-  if (host.includes('instagram.com')) {
-    document.querySelectorAll('div[role="presentation"]').forEach(el => {
-      const txt = (el.textContent || '').toLowerCase();
-      if (txt.includes('log in') || txt.includes('sign up') || txt.includes('đăng nhập')) el.remove();
-    });
-    document.body.style.overflow = '';
-    document.body.style.position = '';
-    document.documentElement.style.overflow = '';
-  }
 }
 
 // #14: Heavyweight DOM scan — runs at most every 3s
@@ -472,7 +431,7 @@ function dismissHeavy(){
   // Hide app-open buttons
   if (!isLoginPage) {
     const hideTexts = new Set(["Open app","Mở ứng dụng","Get the app","Tải ứng dụng","Dùng ứng dụng","Use app",
-      "Mở Instagram","Open Instagram","Mở TikTok","Open TikTok","Đăng ký","Log in","Sign up",
+      "Mở TikTok","Open TikTok","Đăng ký","Log in","Sign up",
       "Log in to continue","Đăng nhập để tiếp tục"]);
     document.querySelectorAll("a,button,[role='button']").forEach(b=>{
       const t=(b.textContent||"").trim();
@@ -506,10 +465,6 @@ function handleGrid(){
   if(playing)return;
   const links=document.querySelectorAll("a[href*='/reel/'],a[href*='/reels/']");
   if(links.length>0){links[0].click();return;}
-  if(location.hostname.includes('instagram.com')){
-    const vids=document.querySelectorAll('video');
-    if(vids.length>0&&vids[0].paused){vids[0].click();}
-  }
 }
 
 // API

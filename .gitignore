@@ -1,0 +1,21 @@
+.build/
+.swiftpm/
+RiuViewer.app/
+*.xcodeproj
+xcuserdata/
+.DS_Store
+
+# Android
+android-tv/.gradle/
+android-tv/.idea/
+android-tv/build/
+android-tv/app/build/
+android-tv/local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Node
+node_modules/
+._*

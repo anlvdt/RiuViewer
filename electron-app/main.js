@@ -4,7 +4,6 @@ const fs = require('fs');
 
 const PLATFORMS = {
   fb: { name: 'Facebook Reels', url: 'https://touch.facebook.com/reel/' },
-  ig: { name: 'Instagram Reels', url: 'https://www.instagram.com/reels/' },
   tt: { name: 'TikTok', url: 'https://www.tiktok.com/foryou' },
   yt: { name: 'YouTube Shorts', url: 'https://m.youtube.com/shorts' },
 };
@@ -48,14 +47,6 @@ function createWindow() {
         || u === 'https://www.facebook.com/' || u.endsWith('facebook.com')
         || u.includes('/home.php') || u.includes('facebook.com/?');
       if (u.includes('facebook.com') && isHomepage && !isLogin && !isReels) {
-        event.preventDefault();
-      }
-    }
-    // #13: Also cancel IG navigation away from reels (prevent jarring redirect)
-    if (currentPlatform === 'ig') {
-      const isLogin = u.includes('/accounts/login') || u.includes('/accounts/onetap') || u.includes('/challenge');
-      const isReels = u.includes('/reels') || u.includes('/reel/');
-      if (u.includes('instagram.com') && !isLogin && !isReels && !u.includes('/accounts/')) {
         event.preventDefault();
       }
     }
@@ -210,7 +201,7 @@ function overlayHTML() {
   <div class="rv-sr"><span class="rv-sk">+ / -</span><span>Speed up / down</span></div>
   <div class="rv-sr"><span class="rv-sk">P</span><span>Pin on top</span></div>
   <div class="rv-sr"><span class="rv-sk">F</span><span>Clean mode (dblclick)</span></div>
-  <div class="rv-sr"><span class="rv-sk">1-4</span><span>FB / IG / TT / YT</span></div>
+  <div class="rv-sr"><span class="rv-sk">1-3</span><span>FB / TT / YT</span></div>
   <p style="margin-top:10px;font-size:11px;opacity:0.4">Click to close</p>
 </div></div>
 <div id="rv-clean-toggle" style="display:none!important;position:fixed;top:30px;left:6px;z-index:999999;width:28px;height:28px;border-radius:50%;background:rgba(0,0,0,0.4);color:#fff;align-items:center;justify-content:center;cursor:pointer;border:none">

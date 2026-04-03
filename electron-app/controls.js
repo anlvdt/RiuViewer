@@ -11,8 +11,8 @@ var svgPin='<svg viewBox="0 0 24 24"><path d="M14 4v5c0 1.12.37 2.16 1 3H9c.65-.
 var svgPinOn='<svg viewBox="0 0 24 24"><path d="M17 2H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3V4h1c.55 0 1-.45 1-1s-.45-1-1-1z"/></svg>';
 
 var speeds=[0.25,0.5,0.75,1.0,1.25,1.5,2.0,3.0,4.0];
-var platKeys=['fb','ig','tt','yt'];
-var platNames={fb:'FB',ig:'IG',tt:'TT',yt:'YT'};
+var platKeys=['fb','tt','yt'];
+var platNames={fb:'FB',tt:'TT',yt:'YT'};
 var st={plat:'fb',auto:true,vol:0,spd:1.0,pin:false,clean:false,opa:1.0};
 var longPress=false,lastL=0,lastR=0;
 
@@ -167,7 +167,7 @@ document.addEventListener('keydown',function(e){
     case '+':case '=':chgSpd(true);break;
     case '-':case '_':chgSpd(false);break;
     case '0':st.spd=1;applySpd();break;
-    case '1':nav('fb');break;case '2':nav('ig');break;case '3':nav('tt');break;case '4':nav('yt');break;
+    case '1':nav('fb');break;case '2':nav('tt');break;case '3':nav('yt');break;
     case 'ArrowUp':e.preventDefault();scroll(true);break;
     case 'ArrowDown':e.preventDefault();scroll(false);break;
     case 'ArrowLeft':if(Date.now()-lastL<400)window.__seekRelative&&window.__seekRelative(-5);lastL=Date.now();break;

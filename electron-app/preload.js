@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-const VALID_PLATFORMS = ['fb', 'ig', 'tt', 'yt'];
+const VALID_PLATFORMS = ['fb', 'tt', 'yt'];
 
 contextBridge.exposeInMainWorld('rvAPI', {
   // Validate platform key before sending to main process

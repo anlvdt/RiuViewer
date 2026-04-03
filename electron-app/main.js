@@ -8,12 +8,14 @@ const PLATFORMS = {
   tt: { name: 'TikTok', url: 'https://www.tiktok.com/foryou' },
   yt: { name: 'YouTube Shorts', url: 'https://m.youtube.com/shorts' },
 };
+const VALID_PLATFORM_KEYS = Object.keys(PLATFORMS);
 
 const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 
 let win, currentPlatform = 'fb', pinned = false;
 let injectJS = '', overlayCSS = '', overlayJS = '';
+let injectInterval = null; // #20: track interval for cleanup
 
 try { injectJS = fs.readFileSync(path.join(__dirname, 'inject.js'), 'utf8'); } catch(e) {}
 try { overlayCSS = fs.readFileSync(path.join(__dirname, 'controls.css'), 'utf8'); } catch(e) {}
@@ -23,7 +25,12 @@ function createWindow() {
   win = new BrowserWindow({
     width: 420, height: 780, minWidth: 360, minHeight: 600,
     resizable: false, titleBarStyle: 'default', backgroundColor: '#000000',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, autoplayPolicy: 'no-user-gesture-required' }
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,       // #1: explicit
+      nodeIntegration: false,        // #1: explicit
+      autoplayPolicy: 'no-user-gesture-required'
+    }
   });
   win.setMenu(null);
   // win.webContents.openDevTools({ mode: 'detach' });
@@ -41,6 +48,14 @@ function createWindow() {
         || u === 'https://www.facebook.com/' || u.endsWith('facebook.com')
         || u.includes('/home.php') || u.includes('facebook.com/?');
       if (u.includes('facebook.com') && isHomepage && !isLogin && !isReels) {
+        event.preventDefault();
+      }
+    }
+    // #13: Also cancel IG navigation away from reels (prevent jarring redirect)
+    if (currentPlatform === 'ig') {
+      const isLogin = u.includes('/accounts/login') || u.includes('/accounts/onetap') || u.includes('/challenge');
+      const isReels = u.includes('/reels') || u.includes('/reel/');
+      if (u.includes('instagram.com') && !isLogin && !isReels && !u.includes('/accounts/')) {
         event.preventDefault();
       }
     }
@@ -63,33 +78,71 @@ function createWindow() {
         }, 2000);
       }
     }
-    if (currentPlatform === 'ig') {
-      const isLoginPage = u.includes('instagram.com/accounts/login') || u.includes('instagram.com/accounts/onetap') || u.includes('instagram.com/challenge');
-      const isReels = u.includes('/reels') || u.includes('/reel/');
-      if (!isLoginPage && !isReels && u.includes('instagram.com') && !u.includes('/accounts/')) {
-        setTimeout(() => {
-          if (!win || win.isDestroyed()) return;
-          const cur = win.webContents.getURL().toLowerCase();
-          if (cur.includes('instagram.com') && !cur.includes('/reels') && !cur.includes('/reel/') && !cur.includes('/accounts/')) {
-            win.loadURL(PLATFORMS.ig.url);
-          }
-        }, 2000);
-      }
-    }
+    // #13: IG redirect handled in will-navigate now, remove delayed redirect
   });
 
-  setInterval(injectAll, 3000);
-  win.on('closed', () => { win = null; });
+  injectInterval = setInterval(injectAll, 3000); // #20: store ref
+  win.on('closed', () => {
+    // #20: clear interval on window close
+    if (injectInterval) { clearInterval(injectInterval); injectInterval = null; }
+    win = null;
+  });
 }
 
-// Hide FB native UI CSS
+// Hide FB native UI CSS — comprehensive rules to hide header, open-app, like/comment/share
 const FB_HIDE_CSS = `
-  #header,#MTopBlueBar,.mTopBlueBar,div[data-sigil="MTopBlueBar"],div[data-sigil="top-blue-bar"],
-  div[data-pagelet="ReelsHeaderUnit"],a[data-sigil*="MTopBlueBarOpenInApp"],
-  [data-sigil="m-promo-jewel-header"],div[id="header"],div[id="MTopBlueBar"],
+  /* Top header bar with Reels title, search, profile, open-app button */
+  #header,#MTopBlueBar,.mTopBlueBar,
+  div[data-sigil="MTopBlueBar"],div[data-sigil="top-blue-bar"],
+  div[data-pagelet="ReelsHeaderUnit"],
+  a[data-sigil*="MTopBlueBarOpenInApp"],
+  [data-sigil="m-promo-jewel-header"],
+  div[id="header"],div[id="MTopBlueBar"] { display:none!important }
+
+  /* Unmute overlay */
   div[aria-label*="bật tiếng"],div[aria-label*="unmute"],
-  div[data-sigil*="unmute"],button[aria-label*="bật tiếng"],button[aria-label*="unmute"]
-  { display:none!important }
+  div[data-sigil*="unmute"],button[aria-label*="bật tiếng"],
+  button[aria-label*="unmute"] { display:none!important }
+
+  /* "Mở ứng dụng" / Open app button and its container */
+  a[href*="//itunes.apple.com"],a[href*="//play.google.com"],
+  a[href*="market://"],a[href*="intent://"],
+  div[class*="native-app"],
+  a[data-sigil*="MTopBlueBarOpenInApp"] { display:none!important }
+
+  /* FB Reels top navigation bar — the bar containing "Reels", search, profile icons */
+  .vscroller ~ div[style*="position"],
+  div[data-type="vscroller"] ~ div { display:none!important }
+
+  /* Any fixed/sticky bar at top of page (FB header) */
+  body > div:first-child > div:first-child[class]:not(.vscroller) {
+    position: relative!important;
+    display: none!important;
+  }
+
+  /* Right-side action buttons (like, comment, share) */
+  .vscroller [data-sigil*="like"],
+  .vscroller [data-sigil*="share"],
+  .vscroller [data-sigil*="comment"] { display:none!important }
+
+  /* Bottom overlay: username, caption, follow, music info */
+  .vscroller .story-overlay-bottom,
+  .vscroller .overlay-bottom { display:none!important }
+
+  /* Right-side action column */
+  .vscroller [class*="action"],
+  .vscroller [class*="Action"] { display:none!important }
+
+  /* Generic: last child in vscroller items (usually the overlay controls) */
+  .vscroller > div > div:last-child { pointer-events:none!important; opacity:0!important }
+
+  /* Login/signup bars */
+  [data-testid="royal_login_bar"],
+  [data-testid="mobile_login_bar"] { display:none!important }
+
+  /* Force black background, hide scrollbars */
+  body,html { background:#000!important }
+  video { object-fit:cover!important }
 `;
 
 function injectAll() {
@@ -101,7 +154,7 @@ function injectAll() {
       || url.includes('login/device-based') || url.includes('/checkpoint')) return;
 
   wc.insertCSS(FB_HIDE_CSS).catch(() => {});
-  if (injectJS) wc.executeJavaScript(injectJS).catch(() => {});
+  if (injectJS) wc.executeJavaScript(injectJS).catch(e => console.warn('[RV] inject error:', e.message)); // #19: log errors
 
   const htmlStr = JSON.stringify(overlayHTML());
   const cssStr = JSON.stringify(overlayCSS);
@@ -110,9 +163,10 @@ function injectAll() {
       var s=document.createElement('style');s.id='__rv_css';s.textContent=${cssStr};document.head.appendChild(s);
       var d=document.createElement('div');d.id='__rv_controls';d.innerHTML=${htmlStr};document.body.appendChild(d);
     }
-  `).catch(() => {});
-  // Execute controls.js separately to avoid template literal conflicts
-  wc.executeJavaScript(`if(document.getElementById('__rv_controls')&&!window.__rvControls){` + overlayJS + `}`).catch(() => {});
+  `).catch(e => console.warn('[RV] controls HTML error:', e.message));
+  // Execute controls.js directly via executeJavaScript (runs in isolated world, bypasses CSP)
+  // String concat is safe here because controls.js has no template literals
+  wc.executeJavaScript(`if(document.getElementById('__rv_controls')&&!window.__rvControls){` + overlayJS + `}`).catch(e => console.warn('[RV] controls JS error:', e.message));
 }
 
 function overlayHTML() {
@@ -138,7 +192,7 @@ function overlayHTML() {
   <button class="rv-b" id="rv-dn">${ico.down}</button>
   <button class="rv-b" id="rv-rel">${ico.reload}</button>
   <button class="rv-b" id="rv-spd">${ico.speed}<span class="rv-l" id="rv-spd-l">1x</span></button>
-  <button class="rv-b" id="rv-vol">${ico.volOff}<span class="rv-l" id="rv-vol-l">0%</span></button>
+  <button class="rv-b" id="rv-vol"><span class="rv-ico">${ico.volOff}</span><span class="rv-l" id="rv-vol-l">0%</span></button>
   <button class="rv-b" id="rv-auto">${ico.play}<span class="rv-l" id="rv-auto-l">Auto</span></button>
   <button class="rv-b" id="rv-pin">${ico.pin}<span class="rv-l" id="rv-pin-l">Pin</span></button>
   <button class="rv-b" id="rv-hide">${ico.eye}<span class="rv-l">Hide</span></button>
@@ -165,6 +219,8 @@ function overlayHTML() {
 }
 
 function loadPlatform(key) {
+  // #4: validate platform key
+  if (!VALID_PLATFORM_KEYS.includes(key)) return;
   currentPlatform = key;
   if (key === 'fb' || key === 'yt') {
     win.webContents.setUserAgent(MOBILE_UA);
@@ -199,18 +255,39 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => app.quit());
 
-ipcMain.handle('rv-navigate', (_, key) => { loadPlatform(key); return key; });
-ipcMain.handle('rv-reload', () => { if(win) win.reload(); });
-ipcMain.handle('rv-toggle-pin', () => { pinned=!pinned; win.setAlwaysOnTop(pinned); return pinned; });
-ipcMain.handle('rv-set-opacity', (_, v) => { win.setOpacity(v); return v; });
+// #4: validate platform key from renderer
+ipcMain.handle('rv-navigate', (_, key) => {
+  if (!VALID_PLATFORM_KEYS.includes(key)) return null;
+  loadPlatform(key);
+  return key;
+});
+ipcMain.handle('rv-reload', () => { if(win && !win.isDestroyed()) win.reload(); });
+ipcMain.handle('rv-toggle-pin', () => {
+  if (!win || win.isDestroyed()) return false;
+  pinned=!pinned; win.setAlwaysOnTop(pinned); return pinned;
+});
+// #5: clamp opacity to valid range
+ipcMain.handle('rv-set-opacity', (_, v) => {
+  if (typeof v !== 'number' || isNaN(v)) return 1.0;
+  const clamped = Math.max(0.1, Math.min(1.0, v));
+  if (win && !win.isDestroyed()) win.setOpacity(clamped);
+  return clamped;
+});
+// #6: clear-data with null check
 ipcMain.handle('rv-clear-data', async () => {
   await session.defaultSession.clearStorageData();
   await session.defaultSession.clearCache();
   app.relaunch(); app.exit(0);
 });
+// #4: validate screenshot dataURL format
 ipcMain.handle('rv-screenshot', async (_, dataURL) => {
+  if (typeof dataURL !== 'string' || !dataURL.startsWith('data:image/png;base64,')) {
+    return 'invalid';
+  }
   const base64 = dataURL.replace(/^data:image\/png;base64,/, '');
+  if (!/^[A-Za-z0-9+/=]+$/.test(base64)) return 'invalid';
   const buf = Buffer.from(base64, 'base64');
+  if (buf.length < 100) return 'invalid'; // too small to be a real PNG
   const { filePath } = await dialog.showSaveDialog(win, {
     defaultPath: 'RiuViewer_' + Date.now() + '.png',
     filters: [{ name: 'PNG', extensions: ['png'] }]

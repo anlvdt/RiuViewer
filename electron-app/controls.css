@@ -31,6 +31,8 @@
 .rv-b:hover{opacity:1!important;background:rgba(255,255,255,0.25)!important}
 .rv-b:active{transform:scale(0.9)!important}
 .rv-b svg{width:22px!important;height:22px!important;fill:currentColor!important;flex-shrink:0!important}
+.rv-ico{display:flex!important;align-items:center!important;justify-content:center!important}
+.rv-ico svg{width:22px!important;height:22px!important;fill:currentColor!important;flex-shrink:0!important}
 .rv-l{
   position:absolute!important;
   left:100%!important;top:50%!important;transform:translateY(-50%)!important;

@@ -37,10 +37,10 @@ HTMLMediaElement.prototype.pause=function(){
 let _cachedTarget=null,_cacheTime=0;
 function getScrollTarget(){
   const now=Date.now();
-  if(_cachedTarget&&(now-_cacheTime)<15000&&document.contains(_cachedTarget)&&_cachedTarget.scrollHeight>_cachedTarget.clientHeight)return _cachedTarget;
+  if(_cachedTarget&&(now-_cacheTime)<15000&&document.contains(_cachedTarget)
+     &&_cachedTarget.scrollHeight>_cachedTarget.clientHeight)return _cachedTarget;
   let best=null;
   const host=location.hostname;
-  // Platform-specific selectors first
   const selectors = host.includes('instagram.com')
     ? ['section main > div [style*="overflow"]','div._aagw','div[style*="overflow-y: auto"]','div[style*="overflow-y:auto"]']
     : host.includes('facebook.com')
@@ -66,8 +66,6 @@ function getScrollTarget(){
 
 function doScrollNext(){
   const host = location.hostname;
-  
-  // Instagram: use ArrowDown keyboard event
   if (host.includes('instagram.com')) {
     document.dispatchEvent(new KeyboardEvent('keydown', {
       key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40,
@@ -75,15 +73,11 @@ function doScrollNext(){
     }));
     return;
   }
-  
-  // Touch FB: use wheel event on vscroller (FB listens to wheel for snap scroll)
   const vscroller = document.querySelector('.vscroller') || document.querySelector('[class*="vscroller"]');
   if (vscroller) {
     _scrollViaWheel(vscroller, false);
     return;
   }
-  
-  // Generic fallback
   const scrollables = _findAllScrollables();
   for (const sc of scrollables) {
     sc.scrollBy({ top: sc.clientHeight || window.innerHeight, behavior: 'smooth' });
@@ -91,22 +85,17 @@ function doScrollNext(){
   window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });
 }
 
+// #18: Single wheel event instead of triple, with longer fallback wait
 function _scrollViaWheel(target, up) {
-  // Dispatch wheel events to trigger FB's snap scroll
-  const delta = up ? -300 : 300;
-  for (let i = 0; i < 3; i++) {
-    setTimeout(() => {
-      target.dispatchEvent(new WheelEvent('wheel', {
-        deltaY: delta, deltaX: 0, deltaMode: 0,
-        bubbles: true, cancelable: true, view: window
-      }));
-    }, i * 50);
-  }
-  // Check after 400ms if wheel worked
+  const delta = up ? -600 : 600;
+  target.dispatchEvent(new WheelEvent('wheel', {
+    deltaY: delta, deltaX: 0, deltaMode: 0,
+    bubbles: true, cancelable: true, view: window
+  }));
   const before = target.scrollTop;
+  // #8: Longer wait (700ms) to let smooth scroll animate before fallback
   setTimeout(() => {
     if (Math.abs(target.scrollTop - before) < 10) {
-      // Wheel didn't work, force scrollTop once
       const snapH = target.clientHeight;
       const dest = up ? Math.max(0, before - snapH) : before + snapH;
       target.style.scrollBehavior = 'auto';
@@ -115,12 +104,9 @@ function _scrollViaWheel(target, up) {
       setTimeout(() => {
         target.style.scrollBehavior = '';
         target.style.scrollSnapType = '';
-      }, 100);
-      console.log('[RV] forced scrollTop from', before, 'to', dest);
-    } else {
-      console.log('[RV] wheel scroll worked, scrollTop:', target.scrollTop);
+      }, 150);
     }
-  }, 400);
+  }, 700);
 }
 
 function _findAllScrollables() {
@@ -138,7 +124,6 @@ function _findAllScrollables() {
       } catch(e) {}
     }
   }
-  // Also check if body/html is scrollable
   if (document.documentElement.scrollHeight > document.documentElement.clientHeight + 10) {
     results.push(document.documentElement);
   }
@@ -156,13 +141,11 @@ window.__doManualScroll=function(up){
     }));
     return;
   }
-  // Touch FB: use wheel + force scroll
   const vscroller = document.querySelector('.vscroller') || document.querySelector('[class*="vscroller"]');
   if (vscroller) {
     _scrollViaWheel(vscroller, up);
     return;
   }
-  // Fallback
   const dist = (up ? -1 : 1) * window.innerHeight;
   window.scrollBy({ top: dist, behavior: 'smooth' });
 };
@@ -175,19 +158,19 @@ function getPrimaryVideo(){
 function visPrimary(v){const r=v.getBoundingClientRect();return(Math.min(window.innerHeight,r.bottom)-Math.max(0,r.top))>r.height*0.6;}
 function vis(v){const r=v.getBoundingClientRect();return(Math.min(window.innerHeight,r.bottom)-Math.max(0,r.top))>r.height*0.4;}
 
-// Bind videos
+// #10: Bind videos — re-remove loop on src change
 function bind(){document.querySelectorAll("video").forEach(v=>{
   if(v.__rv){
-    // Check if src changed (FB reuses video elements)
     const curSrc = v.currentSrc || v.src || '';
     if (v.__rvSrc && v.__rvSrc !== curSrc && curSrc) {
-      // Reset for new video
       v.__done = false;
       v.__totalPlayed = 0;
       v.__lastCheckTime = -1;
       v.__loopCount = 0;
       v.__bindTime = Date.now();
       v.__rvSrc = curSrc;
+      // #10: re-remove loop on src change
+      v.removeAttribute("loop"); v.loop = false;
     }
     return;
   }
@@ -198,103 +181,89 @@ function bind(){document.querySelectorAll("video").forEach(v=>{
   v.removeAttribute("loop");v.loop=false;
 
   v.addEventListener("ended",()=>{
-    console.log('[RV] video ended, visPrimary:', visPrimary(v));
-    if(visPrimary(v)){window.__videosWatched++;triggerScroll(v);}
+    if(visPrimary(v)&&!v.__done){window.__videosWatched++;triggerScroll(v);}
   });
   v.addEventListener("timeupdate",()=>{
     if(!window.__autoScroll||window.__scrolling||v.__done||!visPrimary(v))return;
     if(Date.now()-window.__lastScrollTime<6000||Date.now()-v.__bindTime<3000)return;
     const t=v.currentTime,d=v.duration;
     if(v.__lastCheckTime>=0&&t>v.__lastCheckTime&&t-v.__lastCheckTime<1)v.__totalPlayed+=t-v.__lastCheckTime;
-    // Detect loop restart (currentTime jumps back to near 0)
     if(v.__lastCheckTime>2&&t<0.5){
       if(d&&d>0&&d!==Infinity){if(v.__totalPlayed>=d*0.9){v.__loopCount++;if(v.__loopCount>=1){window.__videosWatched++;triggerScroll(v);}}}
       else{if(v.__totalPlayed>=8){v.__loopCount++;if(v.__loopCount>=1){window.__videosWatched++;triggerScroll(v);}}}
     }
-    // Near end of video
+    // #11: near-end detection — only trigger if not already done (triggerScroll checks __done)
     if(d&&d>1&&d!==Infinity&&t>=d-0.3&&v.__totalPlayed>=d*0.85&&!v.__done){window.__videosWatched++;triggerScroll(v);}
     v.__lastCheckTime=t;
   });
-  // Re-remove loop periodically
   const lk=setInterval(()=>{if(!document.contains(v)){clearInterval(lk);return;}if(v.loop){v.loop=false;v.removeAttribute("loop");}},2000);
 });}
 
-// Timer-based auto scroll fallback: checks every 2 seconds
+// #11: Timer-based fallback — check __done to prevent double-count
 setInterval(function(){
   if(!window.__autoScroll||window.__scrolling)return;
   if(Date.now()-window.__lastScrollTime<6000)return;
   const v=getPrimaryVideo();
   if(!v||v.paused||v.__done)return;
   const d=v.duration;
-  // If duration is known and finite
   if(d&&d>0&&d!==Infinity){
-    if(v.currentTime>=d*0.95){
-      console.log('[RV] timer: video near end, scrolling. ct='+v.currentTime+' d='+d);
+    if(v.currentTime>=d*0.95&&!v.__done){
       window.__videosWatched++;
       triggerScroll(v);
       return;
     }
   }
-  // If duration unknown/infinite but video has been bound for >20s
-  if(Date.now()-v.__bindTime>20000&&v.__totalPlayed>12){
-    console.log('[RV] timer: long play fallback, scrolling. totalPlayed='+v.__totalPlayed);
+  if(Date.now()-v.__bindTime>20000&&v.__totalPlayed>12&&!v.__done){
     window.__videosWatched++;
     triggerScroll(v);
   }
 },2000);
+
+// #7: Only reset the scrolled video, not ALL videos
 function triggerScroll(v, isAdSkip){
   const cooldown = isAdSkip ? 2000 : 6000;
   if(window.__scrolling||v.__done||!window.__autoScroll||Date.now()-window.__lastScrollTime<cooldown)return;
-  console.log('[RV] triggerScroll called');
   v.__done=true;window.__scrolling=true;window.__lastScrollTime=Date.now();
   v.volume=0;v.muted=true;
   setTimeout(()=>{
-    console.log('[RV] calling doScrollNext');
     doScrollNext();
   },400);
-  // After scroll completes, reset states for next video
   setTimeout(()=>{
     window.__scrolling=false;
-    // Reset all videos so next one can trigger
-    document.querySelectorAll('video').forEach(vid => {
-      vid.__done = false;
-      vid.__totalPlayed = 0;
-      vid.__lastCheckTime = -1;
-      vid.__loopCount = 0;
-      vid.__bindTime = Date.now(); // Reset bind time so cooldown applies
-    });
-    // Update lastScrollTime to now so cooldown starts fresh
-    window.__lastScrollTime = Date.now();
-    console.log('[RV] scrolling unlocked, reset video states');
+    window.__lastScrollTime=Date.now();
   },4000);
 }
 
+// #15: Event-driven audio management instead of 300ms polling
+let _lastPrimaryVideo = null;
 function manageAudio(){
+  const videos = document.querySelectorAll("video");
   let primary=null;
-  document.querySelectorAll("video").forEach(v=>{if(visPrimary(v)&&!v.paused)primary=v;});
-  document.querySelectorAll("video").forEach(v=>{
+  videos.forEach(v=>{if(visPrimary(v)&&!v.paused)primary=v;});
+  // Only update if primary changed or on periodic check
+  videos.forEach(v=>{
     if(v===primary){v.volume=window.__vol;v.muted=(window.__vol===0);}
     else{v.volume=0;v.muted=true;}
   });
+  _lastPrimaryVideo = primary;
 }
 
+// #16: Only apply playback rate when it actually differs
 function applyPlaybackRate(){
   const rate=window.__longPressSpeed||window.__playbackRate;
   document.querySelectorAll("video").forEach(v=>{if(v.playbackRate!==rate)v.playbackRate=rate;});
 }
 
-  // Ad detection
+// Ad detection
 function isAd(){
   const adWords=["Được tài trợ","Sponsored","Publicidad","Gesponsert","Sponsorisé","Patrocinado","Quảng cáo","Ad"];
   const host=location.hostname;
   if(host.includes('instagram.com'))adWords.push("Được tài trợ","Sponsored");
-  // Check spans
   for(const sp of document.querySelectorAll("span,a,div")){
     const t=(sp.textContent||"").trim();
     if(t.length>30||t.length<2)continue;
     if(adWords.includes(t)){const r=sp.getBoundingClientRect();if(r.top>=-50&&r.bottom<=window.innerHeight+50&&r.width>0)return true;}
   }
-  // Touch FB: check for "Sponsored" data attributes or ad markers
   if(host.includes('facebook.com')){
     const adSelectors=['[data-sigil*="ad"]','[data-ad]','[data-ft*="ad"]','a[href*="/ads/"]','[data-store*="sponsor"]'];
     for(const sel of adSelectors){
@@ -306,154 +275,61 @@ function isAd(){
 }
 function skipAds(){
   if(!window.__autoScroll||window.__scrolling)return;
-  // Shorter cooldown for ads (2s instead of 5s)
   if(Date.now()-window.__lastScrollTime<2000)return;
   if(isAd()){
-    console.log('[RV] ad detected, skipping');
     document.querySelectorAll("video").forEach(v=>{if(!v.paused&&visPrimary(v)&&!v.__done)triggerScroll(v, true);});
   }
 }
 
-// Dismiss popups/overlays
-function dismissAll(){
+// #9 #14: Debounced dismissAll — split into lightweight (CSS-based) and heavyweight (DOM scan)
+let _dismissDebounceTimer = null;
+let _lastHeavyDismiss = 0;
+
+function dismissAllDebounced(){
+  if(_dismissDebounceTimer) return; // already scheduled
+  _dismissDebounceTimer = setTimeout(()=>{
+    _dismissDebounceTimer = null;
+    dismissLight();
+    // Heavy scan at most every 3 seconds
+    const now = Date.now();
+    if(now - _lastHeavyDismiss > 3000){
+      _lastHeavyDismiss = now;
+      dismissHeavy();
+    }
+  }, 300);
+}
+
+// Lightweight: CSS injection + targeted selectors (fast, safe to run often)
+function dismissLight(){
   const host = location.hostname;
   const isLoginPage = location.pathname.includes('/login') || location.href.includes('login.php') || location.href.includes('/checkpoint') || location.href.includes('/accounts/login');
-  
-  // Don't dismiss anything on login pages - let user login
   if (isLoginPage) return;
 
-  // Facebook touch: remove top header bar and "Mở ứng dụng" button
-  if (host.includes('facebook.com')) {
-    // Remove top header/nav bar
-    document.querySelectorAll('#header,#MTopBlueBar,.mTopBlueBar,[data-sigil="MTopBlueBar"],[data-sigil="top-blue-bar"]').forEach(e=>e.remove());
-    // Remove any fixed top bar that is FB header (40-90px height, not our controls)
-    document.querySelectorAll('div').forEach(el=>{
-      if(el.id&&el.id.startsWith('rv-'))return;
-      if(el.closest&&el.closest('#__rv_controls'))return;
-      try{
-        const s=getComputedStyle(el);
-        if((s.position==='fixed'||s.position==='sticky')&&el.offsetHeight>=40&&el.offsetHeight<90){
-          const r=el.getBoundingClientRect();
-          if(r.top<10&&r.width>window.innerWidth*0.7){
-            el.style.display='none';
-          }
-        }
-      }catch(e){}
-    });
-    // Remove "Mở ứng dụng" / "Open app" / "Nhấn để bật tiếng" buttons and banners
-    document.querySelectorAll('a,button,div,[role="button"],span').forEach(b=>{
-      const t=(b.textContent||'').trim();
-      if(t==='Mở ứng dụng'||t==='Mở ứng...'||t==='Open app'||t==='Open in app'||t==='Mở ứ...'||t.match(/^Mở ứng/)
-        ||t==='Nhấn để bật tiếng'||t==='Tap to unmute'
-        ||t==='Theo dõi'||t==='Follow'||t==='Thích'||t==='Like'
-        ||t==='Bình luận'||t==='Comment'||t==='Chia sẻ'||t==='Share'){
-        if(b.closest&&b.closest('#__rv_controls'))return;
-        let p=b;
-        for(let i=0;i<3;i++){
-          if(p.parentElement&&p.parentElement.offsetHeight<80&&p.parentElement.tagName!=='BODY')p=p.parentElement;
-          else break;
-        }
-        p.style.cssText='display:none!important';
-      }
-    });
-    // Hide FB native overlays (like/share/comment/caption) but NOT video containers
-    const vscroller = document.querySelector('.vscroller');
-    if(vscroller){
-      const allVideos = vscroller.querySelectorAll('video');
-      vscroller.querySelectorAll('div,a,span,button,footer,aside').forEach(el=>{
-        if(el.closest&&el.closest('#__rv_controls'))return;
-        if(el.tagName==='VIDEO')return;
-        // Skip if this element contains or is ancestor of any video
-        let containsVideo = false;
-        allVideos.forEach(v=>{ if(el.contains(v)) containsVideo=true; });
-        if(containsVideo)return;
-        // Skip if any video is ancestor of this element
-        let insideVideo = false;
-        allVideos.forEach(v=>{ if(v.parentElement&&v.parentElement.contains(el)) insideVideo=true; });
-        try{
-          const cs=getComputedStyle(el);
-          const r=el.getBoundingClientRect();
-          if(r.width<10||r.height<10)return;
-          if(cs.position==='absolute'||cs.position==='fixed'){
-            // Only hide if it's visually overlapping the viewport (not off-screen)
-            if(r.top<window.innerHeight&&r.bottom>0&&r.left<window.innerWidth&&r.right>0){
-              el.style.cssText='display:none!important';
-            }
-          }
-        }catch(e){}
-      });
-    }
-  }
-  
-  document.querySelectorAll("[aria-label='Close'],[aria-label='Đóng'],[aria-label='Dismiss']").forEach(b=>b.click());
-  const words=["not now","không phải bây giờ","đóng","để sau","bỏ qua","skip","later","no thanks"];
-  document.querySelectorAll("a,button,[role='button']").forEach(b=>{
-    const t=(b.textContent||"").toLowerCase().trim();
-    if(words.includes(t)){b.click();return;}
-  });
-  document.querySelectorAll("[role='dialog'],[data-testid='royal_login_bar']").forEach(e=>{
-    // Don't remove login dialogs on login pages
-    const isLoginPage = location.pathname.includes('/login') || location.href.includes('login.php') || location.href.includes('/checkpoint') || location.href.includes('/accounts/login');
-    if (isLoginPage) return;
-    // For Instagram login dialogs, remove them
-    if (host.includes('instagram.com')) {
-      // Check if it's a login/signup dialog
-      const txt = (e.textContent || '').toLowerCase();
-      if (txt.includes('log in') || txt.includes('sign up') || txt.includes('đăng nhập') || txt.includes('đăng ký')) {
-        e.remove();
-        // Also re-enable scrolling on body
-        document.body.style.overflow = '';
-        document.documentElement.style.overflow = '';
-        return;
-      }
-    }
-    e.remove();
-  });
-  // Remove app-open overlays
-  document.querySelectorAll("div").forEach(el=>{
-    const t=(el.textContent||"").trim();
-    if((t.includes("Xem thước phim")||t.includes("trong ứng dụng")||t.includes("Open in app")||t.includes("in the app"))&&el.offsetHeight>200&&el.offsetWidth>200){
-      const r=el.getBoundingClientRect();
-      if(r.top<window.innerHeight*0.5&&r.height>window.innerHeight*0.3)el.remove();
-    }
-  });
-  // Hide app-open buttons (but not on login pages)
-  if (!isLoginPage) {
-    document.querySelectorAll("a,button,div,[role='button'],span").forEach(b=>{
-      const t=(b.textContent||"").trim();
-      if(["Open app","Mở ứng dụng","Get the app","Tải ứng dụng","Dùng ứng dụng","Use app","Mở Instagram","Open Instagram","Mở TikTok","Open TikTok","Đăng ký","Log in","Sign up","Log in to continue","Đăng nhập để tiếp tục"].includes(t)||t.startsWith("Mở ứng")){
-        b.style.display="none";if(b.parentElement)b.parentElement.style.display="none";
-      }
-    });
-  }
-  // Inject hide style
+  // Inject hide style once
   if(!document.getElementById("__rvStyle")){
     const s=document.createElement("style");s.id="__rvStyle";
     const isLogin = location.pathname.includes('/login') || location.href.includes('login.php') || location.href.includes('/checkpoint');
     const hideNavRule = isLogin ? '' : 'header,nav,[role="banner"],[role="navigation"],[data-pagelet="header"],[data-pagelet="nav_bar"]{display:none!important}';
     const hideFormRule = isLogin ? '' : 'form:not([action*="accounts"]):not([action*="login"]),input[type="text"]:not([name="username"]):not([name="password"]):not([name="email"]):not([id="email"]):not([id="pass"]),input[placeholder]:not([name="username"]):not([name="password"]):not([name="email"]):not([id="email"]):not([id="pass"]){display:none!important}';
-    // Hide FB reels header bar, top navigation, open-app button, and bottom caption overlay
     const fbReelsHeader = host.includes('facebook.com') && !isLogin ? [
-      // Top header bar
       'div[data-pagelet="ReelsHeaderUnit"]{display:none!important}',
       'div[data-type="vscroller"]{padding-top:0!important}',
-      // Open app buttons
       'a[href*="//itunes.apple.com"],a[href*="//play.google.com"],a[href*="market://"],a[href*="intent://"],div[class*="native-app"],a[data-sigil*="MTopBlueBarOpenInApp"]{display:none!important}',
-      // Top header
       '#header,#MTopBlueBar,.mTopBlueBar,div[id="header"],div[data-sigil="MTopBlueBar"],div[id="MTopBlueBar"]{display:none!important}',
       'div[data-sigil="top-blue-bar"],div[data-gt*="top_blue_bar"]{display:none!important}',
       'body>div:first-child>div:first-child[style*="position: fixed"],body>div:first-child>div:first-child[style*="position:fixed"]{display:none!important}',
       'a[href="/"],a[href="/home.php"]{pointer-events:none!important}',
-      // Hide FB native reel controls: like, comment, share, follow button, caption, username overlay
       '[data-sigil*="like"]:not(video):not(#__rv_controls):not(#__rv_controls *){display:none!important}',
       '[data-sigil*="share"]:not(#__rv_controls):not(#__rv_controls *){display:none!important}',
       '[data-sigil*="comment"]:not(#__rv_controls):not(#__rv_controls *){display:none!important}',
-      // Hide bottom overlay (username, caption, follow, music)
       '.vscroller .story-overlay-bottom,.vscroller .overlay-bottom{display:none!important}',
-      // Hide right-side action buttons (like/comment/share column)
       '.vscroller [class*="action"],.vscroller [class*="Action"]{display:none!important}',
-      // Generic: hide fixed positioned elements on right side that are FB controls
       '.vscroller>div>div:last-child{pointer-events:none!important;opacity:0!important}',
+      // Hide the top bar containing "Reels" title + search + profile + "Mở ứng dụng"
+      '.vscroller~div[style*="position"]{display:none!important}',
+      'div[data-type="vscroller"]~div{display:none!important}',
+      // Any fixed element at top that is not our controls
+      'body>div:first-child>div:first-child:not(.vscroller):not(#__rv_controls){position:relative!important;display:none!important}',
     ].join('') : '';
     s.textContent=[
       '[data-testid="royal_login_bar"],[data-testid="mobile_login_bar"]{display:none!important}',
@@ -465,29 +341,161 @@ function dismissAll(){
     ].join('');
     document.head.appendChild(s);
   }
-  // Instagram-specific: remove login overlay that blocks scrolling
+
+  // Click close/dismiss buttons (lightweight, targeted selectors)
+  document.querySelectorAll("[aria-label='Close'],[aria-label='Đóng'],[aria-label='Dismiss']").forEach(b=>b.click());
+
+  // FB: force-hide the Reels header bar by finding it via structure
+  if (host.includes('facebook.com')) {
+    // The header is typically a fixed div above the vscroller
+    var vs = document.querySelector('.vscroller');
+    if(vs && vs.previousElementSibling){
+      vs.previousElementSibling.style.cssText='display:none!important';
+    }
+    // Also hide any sibling divs of vscroller that aren't our controls
+    if(vs && vs.parentElement){
+      Array.from(vs.parentElement.children).forEach(function(ch){
+        if(ch===vs)return;
+        if(ch.id&&(ch.id.startsWith('rv-')||ch.id==='__rv_controls'||ch.id==='__rv_css'||ch.id==='__rv_ctrl_js'))return;
+        if(ch.tagName==='STYLE'||ch.tagName==='SCRIPT')return;
+        ch.style.cssText='display:none!important';
+      });
+    }
+  }
+
+  const words=["not now","không phải bây giờ","đóng","để sau","bỏ qua","skip","later","no thanks"];
+  document.querySelectorAll("a,button,[role='button']").forEach(b=>{
+    const t=(b.textContent||"").toLowerCase().trim();
+    if(words.includes(t))b.click();
+  });
+
+  // Remove dialogs
+  document.querySelectorAll("[role='dialog'],[data-testid='royal_login_bar']").forEach(e=>{
+    if (host.includes('instagram.com')) {
+      const txt = (e.textContent || '').toLowerCase();
+      if (txt.includes('log in') || txt.includes('sign up') || txt.includes('đăng nhập') || txt.includes('đăng ký')) {
+        e.remove();
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
+        return;
+      }
+    }
+    e.remove();
+  });
+
+  // Instagram: remove login overlay
   if (host.includes('instagram.com')) {
-    // Remove the overlay that blocks interaction
     document.querySelectorAll('div[role="presentation"]').forEach(el => {
       const txt = (el.textContent || '').toLowerCase();
-      if (txt.includes('log in') || txt.includes('sign up') || txt.includes('đăng nhập')) {
-        el.remove();
-      }
+      if (txt.includes('log in') || txt.includes('sign up') || txt.includes('đăng nhập')) el.remove();
     });
-    // Ensure body is scrollable
     document.body.style.overflow = '';
     document.body.style.position = '';
     document.documentElement.style.overflow = '';
   }
-  // Hide fixed bottom bars (but not our own controls)
+}
+
+// #14: Heavyweight DOM scan — runs at most every 3s
+function dismissHeavy(){
+  const host = location.hostname;
+  const isLoginPage = location.pathname.includes('/login') || location.href.includes('login.php') || location.href.includes('/checkpoint') || location.href.includes('/accounts/login');
+  if (isLoginPage) return;
+
+  if (host.includes('facebook.com')) {
+    // Remove known FB header elements
+    document.querySelectorAll('#header,#MTopBlueBar,.mTopBlueBar,[data-sigil="MTopBlueBar"],[data-sigil="top-blue-bar"]').forEach(e=>e.remove());
+
+    // Hide fixed top bars (scan computed style for FB headers — limited to top 100px of viewport)
+    document.querySelectorAll('div').forEach(el=>{
+      if(el.id&&el.id.startsWith('rv-'))return;
+      if(el.closest&&el.closest('#__rv_controls'))return;
+      try{
+        const r=el.getBoundingClientRect();
+        // Only check elements near top of viewport to limit scope
+        if(r.top>100||r.width<window.innerWidth*0.7)return;
+        const s=getComputedStyle(el);
+        if((s.position==='fixed'||s.position==='sticky')&&el.offsetHeight>=40&&el.offsetHeight<90){
+          if(r.top<10) el.style.display='none';
+        }
+      }catch(e){}
+    });
+
+    // Hide "Mở ứng dụng" / "Open app" buttons — use targeted text matching
+    const fbHideTexts = new Set(['Mở ứng dụng','Open app','Open in app','Nhấn để bật tiếng','Tap to unmute',
+      'Theo dõi','Follow','Thích','Like','Bình luận','Comment','Chia sẻ','Share']);
+    document.querySelectorAll('a,button,[role="button"]').forEach(b=>{
+      const t=(b.textContent||'').trim();
+      if(fbHideTexts.has(t) || /^Mở ứng/.test(t)){
+        if(b.closest&&b.closest('#__rv_controls'))return;
+        let p=b;
+        for(let i=0;i<3;i++){
+          if(p.parentElement&&p.parentElement.offsetHeight<80&&p.parentElement.tagName!=='BODY')p=p.parentElement;
+          else break;
+        }
+        p.style.cssText='display:none!important';
+      }
+    });
+
+    // Hide FB native overlays in vscroller (but not video containers)
+    const vscroller = document.querySelector('.vscroller');
+    if(vscroller){
+      const allVideos = vscroller.querySelectorAll('video');
+      vscroller.querySelectorAll('div,a,span,button,footer,aside').forEach(el=>{
+        if(el.closest&&el.closest('#__rv_controls'))return;
+        if(el.tagName==='VIDEO')return;
+        let containsVideo = false;
+        allVideos.forEach(v=>{ if(el.contains(v)) containsVideo=true; });
+        if(containsVideo)return;
+        try{
+          const cs=getComputedStyle(el);
+          const r=el.getBoundingClientRect();
+          if(r.width<10||r.height<10)return;
+          if(cs.position==='absolute'||cs.position==='fixed'){
+            if(r.top<window.innerHeight&&r.bottom>0&&r.left<window.innerWidth&&r.right>0){
+              el.style.cssText='display:none!important';
+            }
+          }
+        }catch(e){}
+      });
+    }
+  }
+
+  // Remove app-open overlays (targeted, not full div scan)
+  document.querySelectorAll("div[style*='position: fixed'],div[style*='position:fixed']").forEach(el=>{
+    const t=(el.textContent||"").trim();
+    if((t.includes("Xem thước phim")||t.includes("trong ứng dụng")||t.includes("Open in app")||t.includes("in the app"))&&el.offsetHeight>200&&el.offsetWidth>200){
+      const r=el.getBoundingClientRect();
+      if(r.top<window.innerHeight*0.5&&r.height>window.innerHeight*0.3)el.remove();
+    }
+  });
+
+  // Hide app-open buttons
+  if (!isLoginPage) {
+    const hideTexts = new Set(["Open app","Mở ứng dụng","Get the app","Tải ứng dụng","Dùng ứng dụng","Use app",
+      "Mở Instagram","Open Instagram","Mở TikTok","Open TikTok","Đăng ký","Log in","Sign up",
+      "Log in to continue","Đăng nhập để tiếp tục"]);
+    document.querySelectorAll("a,button,[role='button']").forEach(b=>{
+      const t=(b.textContent||"").trim();
+      if(hideTexts.has(t)||t.startsWith("Mở ứng")){
+        b.style.display="none";if(b.parentElement)b.parentElement.style.display="none";
+      }
+    });
+  }
+
+  // Hide fixed bottom bars (scan computed style, not just inline)
   document.querySelectorAll("div").forEach(el=>{
     if(el.id&&el.id.startsWith('rv-'))return;
     if(el.closest&&el.closest('#__rv_controls'))return;
-    const s=getComputedStyle(el);
-    if((s.position==="fixed"||s.position==="sticky")&&el.offsetHeight<100){
+    // Quick filter: only check elements near bottom of viewport
+    try{
       const r=el.getBoundingClientRect();
-      if(r.bottom>=window.innerHeight-10)el.style.display="none";
-    }
+      if(r.bottom<window.innerHeight-50)return;
+      if(el.offsetHeight>=100)return;
+      const s=getComputedStyle(el);
+      if((s.position==="fixed"||s.position==="sticky")&&r.bottom>=window.innerHeight-10){
+        el.style.display="none";
+      }
+    }catch(e){}
   });
 }
 
@@ -496,10 +504,8 @@ function handleGrid(){
   let playing=false;
   document.querySelectorAll("video").forEach(v=>{if(!v.paused&&vis(v))playing=true;});
   if(playing)return;
-  // Try clicking first reel link (FB or IG)
   const links=document.querySelectorAll("a[href*='/reel/'],a[href*='/reels/']");
   if(links.length>0){links[0].click();return;}
-  // Instagram: try clicking a video thumbnail to enter reels view
   if(location.hostname.includes('instagram.com')){
     const vids=document.querySelectorAll('video');
     if(vids.length>0&&vids[0].paused){vids[0].click();}
@@ -522,21 +528,24 @@ window.__screenshot=()=>{
   c.getContext("2d").drawImage(v,0,0);return c.toDataURL("image/png");
 };
 
-// Setup observers
-if(document.body){
-  new MutationObserver(()=>{bind();dismissAll();}).observe(document.body,{childList:true,subtree:true});
-}else{
-  document.addEventListener('DOMContentLoaded',()=>{
-    new MutationObserver(()=>{bind();dismissAll();}).observe(document.body,{childList:true,subtree:true});
-  });
+// #9: Debounced MutationObserver — bind is lightweight, dismissAll is debounced
+function setupObserver(){
+  const target = document.body;
+  if(!target){document.addEventListener('DOMContentLoaded',setupObserver);return;}
+  new MutationObserver(()=>{
+    bind();
+    dismissAllDebounced();
+  }).observe(target,{childList:true,subtree:true});
 }
-setInterval(dismissAll,2000);
+setupObserver();
+
+// #14: Reduced interval frequency — heavy dismiss handled by debounce
+setInterval(dismissAllDebounced, 3000); // was 2000, now debounced
 setInterval(handleGrid,2500);
 setInterval(skipAds,2500);
-setInterval(manageAudio,300);
-setInterval(applyPlaybackRate,500);
+setInterval(manageAudio, 500); // #15: 500ms instead of 300ms
+setInterval(applyPlaybackRate, 1000); // #16: 1s instead of 500ms
 setInterval(()=>document.querySelectorAll("video").forEach(v=>{if(v.paused&&vis(v))v.play();}),1000);
-// Safety: reset scrolling lock if stuck
 setInterval(()=>{if(window.__scrolling&&Date.now()-window.__lastScrollTime>5000)window.__scrolling=false;},2000);
 bind();
 })();
